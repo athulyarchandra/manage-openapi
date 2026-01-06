@@ -1,0 +1,1811 @@
+openapi: 3.0.3
+info:
+  title: Car Cleaning Management System API
+  description: API specification for Car Cleaning Management System with strict RBAC
+  version: '1.0.0'
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      operationId: loginUser
+      summary: User login to obtain JWT token
+      x-roles: [supervisor, admin, superadmin, worker, accountant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login successful, returns JWT token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+        "401":
+          description: Unauthorized - invalid credentials
+  /auth/logout:
+    post:
+      operationId: logoutUser
+      summary: Logout user and invalidate token
+      x-roles: [supervisor, admin, superadmin, worker, accountant]
+      responses:
+        "204":
+          description: Logout successful
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      summary: Refresh JWT access token
+      x-roles: [supervisor, admin, superadmin, worker, accountant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        "200":
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+        "401":
+          description: Unauthorized - invalid refresh token
+  /profile:
+    get:
+      operationId: getUserProfile
+      summary: Get user profile and access validation
+      x-roles: [supervisor, worker]
+      responses:
+        "200":
+          description: User profile details
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Supervisor'
+                  - $ref: '#/components/schemas/Worker'
+  /cleaners:
+    get:
+      operationId: listCleaners
+      summary: List cleaners
+      x-roles: [supervisor, admin, superadmin]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive]
+        - name: sort
+          in: query
+          schema:
+            type: string
+        - name: filter
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of cleaners
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  cleaners:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Worker'
+    post:
+      operationId: onboardCleaner
+      summary: Onboard a new cleaner
+      x-roles: [admin, superadmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Worker'
+              required:
+                - username
+                - password
+      responses:
+        "201":
+          description: Cleaner onboarded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Worker'
+  /cleaners/{cleanerId}:
+    get:
+      operationId: getCleanerDetail
+      summary: Get detail and live status of cleaner
+      x-roles: [supervisor, admin, superadmin]
+      parameters:
+        - name: cleanerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cleaner detail with live status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Worker'
+                  - type: object
+                    properties:
+                      liveStatus:
+                        type: string
+                        enum: [online, offline, busy, idle]
+  /cleaners/{cleanerId}/reassign:
+    post:
+      operationId: reassignCleanerFloorVehicle
+      summary: Reassign cleaner floor and vehicle (admin override allowed)
+      x-roles: [supervisor]
+      parameters:
+        - name: cleanerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - floorId
+                - vehicleClassId
+              properties:
+                floorId:
+                  type: string
+                vehicleClassId:
+                  type: string
+      responses:
+        "200":
+          description: Cleaner reassigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Worker'
+  /attendance:
+    get:
+      operationId: getAttendanceMonitoring
+      summary: Get attendance monitoring date-wise
+      x-roles: [supervisor]
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Attendance records for the date
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  attendanceRecords:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Attendance'
+  /floors/{floorId}/summary:
+    get:
+      operationId: getFloorOperationalSummary
+      summary: Get floor-wise operational summaries
+      x-roles: [supervisor]
+      parameters:
+        - name: floorId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operational summary for floor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  floor:
+                    $ref: '#/components/schemas/Floor'
+                  summary:
+                    type: object
+                    description: Operational summary details
+  /jobs/active:
+    get:
+      operationId: getActiveJobs
+      summary: Get active jobs monitored by supervisor
+      x-roles: [supervisor]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of active jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+  /jobs/completed:
+    get:
+      operationId: getCompletedJobs
+      summary: Get completed jobs monitored by supervisor
+      x-roles: [supervisor]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of completed jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+  /jobs/{jobId}/photos:
+    get:
+      operationId: getJobBeforeAfterPhotos
+      summary: Get before and after photos for job verification
+      x-roles: [supervisor]
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Before and after photos of job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  beforePhotos:
+                    type: array
+                    items:
+                      type: string
+                      format: uri
+                  afterPhotos:
+                    type: array
+                    items:
+                      type: string
+                      format: uri
+  /penalties:
+    get:
+      operationId: listPenalties
+      summary: View penalties assigned
+      x-roles: [supervisor]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of penalties
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  penalties:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Penalty'
+    post:
+      operationId: assignPenalty
+      summary: Assign penalty to a cleaner
+      x-roles: [supervisor]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - cleanerId
+                - penaltyId
+                - reason
+              properties:
+                cleanerId:
+                  type: string
+                penaltyId:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        "201":
+          description: Penalty assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Penalty'
+  /performance/daily:
+    get:
+      operationId: getDailyPerformanceSummary
+      summary: Get daily performance summaries
+      x-roles: [supervisor]
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: buildingId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Daily performance summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerformanceSummary'
+  /collections:
+    get:
+      operationId: getCashAndDigitalCollections
+      summary: Get cash and digital collections
+      x-roles: [supervisor]
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of collections
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  collections:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Collection'
+  /customers/payments:
+    get:
+      operationId: getCustomerPaymentStatus
+      summary: Get customer payment status and pending dues
+      x-roles: [supervisor]
+      parameters:
+        - name: customerId
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Customer payment status and dues
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customerId:
+                    type: string
+                  paidAmount:
+                    type: number
+                    format: float
+                  pendingDues:
+                    type: number
+                    format: float
+  /fraud-alerts:
+    get:
+      operationId: listFraudAlerts
+      summary: List fraud alerts and verification status
+      x-roles: [supervisor]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, verified, dismissed]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of fraud alerts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  fraudAlerts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FraudAlert'
+  /jobs:
+    get:
+      operationId: getWorkerJobList
+      summary: Get job list for worker (pending, active, completed)
+      x-roles: [worker]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, active, completed]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of jobs for worker
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+  /jobs/{jobId}/complete:
+    post:
+      operationId: completeJob
+      summary: Mark job as completed with vehicle details
+      x-roles: [worker]
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - vehicleClassId
+                - notes
+              properties:
+                vehicleClassId:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        "200":
+          description: Job marked as completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+  /payments:
+    get:
+      operationId: getWorkerPayments
+      summary: Get payment and rating visibility for worker
+      x-roles: [worker]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of payments and ratings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  payments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        amount:
+                          type: number
+                          format: float
+                        date:
+                          type: string
+                          format: date
+                        rating:
+                          type: number
+                          format: float
+  /attendance/check-in:
+    post:
+      operationId: workerCheckIn
+      summary: Worker attendance check-in
+      x-roles: [worker]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                timestamp:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: Check-in successful
+  /attendance/check-out:
+    post:
+      operationId: workerCheckOut
+      summary: Worker attendance check-out
+      x-roles: [worker]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                timestamp:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: Check-out successful
+  /users:
+    get:
+      operationId: listUsers
+      summary: List users with pagination, filters and sorting
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [supervisor, admin, superadmin, worker, accountant]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [enabled, disabled]
+        - name: sort
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+    post:
+      operationId: createUser
+      summary: Create a new user
+      x-roles: [admin, superadmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/User'
+              required:
+                - username
+                - password
+                - role
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+  /users/{userId}:
+    get:
+      operationId: getUserById
+      summary: Get user details by ID
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    put:
+      operationId: updateUser
+      summary: Update user details
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/User'
+      responses:
+        "200":
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    delete:
+      operationId: deleteUser
+      summary: Delete user by ID
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: User deleted successfully
+  /users/{userId}/enable:
+    post:
+      operationId: enableUser
+      summary: Enable a user account
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User enabled successfully
+  /users/{userId}/disable:
+    post:
+      operationId: disableUser
+      summary: Disable a user account
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User disabled successfully
+  /locations:
+    get:
+      operationId: listLocations
+      summary: List locations
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of locations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  locations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+    post:
+      operationId: createLocation
+      summary: Create a new location
+      x-roles: [admin, superadmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+      responses:
+        "201":
+          description: Location created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+  /buildings:
+    get:
+      operationId: listBuildings
+      summary: List buildings
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: locationId
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of buildings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  buildings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Building'
+    post:
+      operationId: createBuilding
+      summary: Create a new building
+      x-roles: [admin, superadmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Building'
+              required:
+                - name
+                - locationId
+      responses:
+        "201":
+          description: Building created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Building'
+  /floors:
+    get:
+      operationId: listFloors
+      summary: List floors
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: buildingId
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of floors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  floors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Floor'
+    post:
+      operationId: createFloor
+      summary: Create a new floor
+      x-roles: [admin, superadmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Floor'
+              required:
+                - name
+                - buildingId
+      responses:
+        "201":
+          description: Floor created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Floor'
+  /supervisors:
+    get:
+      operationId: listSupervisors
+      summary: List supervisors
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive]
+      responses:
+        "200":
+          description: List of supervisors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  supervisors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Supervisor'
+    post:
+      operationId: onboardSupervisor
+      summary: Onboard a new supervisor
+      x-roles: [admin, superadmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Supervisor'
+              required:
+                - username
+                - password
+      responses:
+        "201":
+          description: Supervisor onboarded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supervisor'
+  /assignments:
+    get:
+      operationId: listAssignments
+      summary: List assignments and reassignment history
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: cleanerId
+          in: query
+          schema:
+            type: string
+        - name: supervisorId
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of assignments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  assignments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        assignmentId:
+                          type: string
+                        cleanerId:
+                          type: string
+                        supervisorId:
+                          type: string
+                        floorId:
+                          type: string
+                        vehicleClassId:
+                          type: string
+                        assignedAt:
+                          type: string
+                          format: date-time
+                        reassignedAt:
+                          type: string
+                          format: date-time
+  /vehicle-classes:
+    get:
+      operationId: listVehicleClasses
+      summary: List vehicle classes and pricing
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of vehicle classes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  vehicleClasses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VehicleClass'
+    post:
+      operationId: createVehicleClass
+      summary: Create a new vehicle class and pricing
+      x-roles: [admin, superadmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/VehicleClass'
+              required:
+                - name
+                - price
+      responses:
+        "201":
+          description: Vehicle class created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VehicleClass'
+  /targets:
+    get:
+      operationId: listTargets
+      summary: List targets and business rules
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of targets and business rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  targets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        targetId:
+                          type: string
+                        description:
+                          type: string
+                        value:
+                          type: number
+                        effectiveFrom:
+                          type: string
+                          format: date
+                        effectiveTo:
+                          type: string
+                          format: date
+    post:
+      operationId: createTarget
+      summary: Create a new target or business rule
+      x-roles: [admin, superadmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - description
+                - value
+                - effectiveFrom
+              properties:
+                description:
+                  type: string
+                value:
+                  type: number
+                effectiveFrom:
+                  type: string
+                  format: date
+                effectiveTo:
+                  type: string
+                  format: date
+      responses:
+        "201":
+          description: Target created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  targetId:
+                    type: string
+                  description:
+                    type: string
+                  value:
+                    type: number
+                  effectiveFrom:
+                    type: string
+                    format: date
+                  effectiveTo:
+                    type: string
+                    format: date
+  /dashboards/attendance:
+    get:
+      operationId: getAttendanceDashboard
+      summary: Attendance dashboard data
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Attendance dashboard metrics
+          content:
+            application/json:
+              schema:
+                type: object
+  /dashboards/work-completion:
+    get:
+      operationId: getWorkCompletionDashboard
+      summary: Work completion dashboard data
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Work completion dashboard metrics
+          content:
+            application/json:
+              schema:
+                type: object
+  /dashboards/performance:
+    get:
+      operationId: getPerformanceDashboard
+      summary: Supervisor-wise and cleaner-wise performance dashboard
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [supervisor, cleaner]
+      responses:
+        "200":
+          description: Performance dashboard metrics
+          content:
+            application/json:
+              schema:
+                type: object
+  /dashboards/revenue-rating:
+    get:
+      operationId: getRevenueAndRatingDashboard
+      summary: Revenue and rating analytics dashboard
+      x-roles: [admin, superadmin]
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Revenue and rating analytics
+          content:
+            application/json:
+              schema:
+                type: object
+  /incentives:
+    get:
+      operationId: listIncentives
+      summary: List incentives and target management
+      x-roles: [accountant]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of incentives
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  incentives:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Incentive'
+    post:
+      operationId: createIncentive
+      summary: Create a new incentive
+      x-roles: [accountant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Incentive'
+              required:
+                - description
+                - amount
+      responses:
+        "201":
+          description: Incentive created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incentive'
+  /salary-accounts:
+    get:
+      operationId: listSalaryAccounts
+      summary: List salary accounts
+      x-roles: [accountant]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of salary accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  salaryAccounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SalaryAccount'
+    post:
+      operationId: createSalaryAccount
+      summary: Create a new salary account
+      x-roles: [accountant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/SalaryAccount'
+              required:
+                - workerId
+                - bankAccountNumber
+      responses:
+        "201":
+          description: Salary account created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalaryAccount'
+  /salaries:
+    get:
+      operationId: listSalaryProcessingHistory
+      summary: List salary processing and history
+      x-roles: [accountant]
+      parameters:
+        - name: workerId
+          in: query
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Salary processing history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  salaries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        salaryId:
+                          type: string
+                        workerId:
+                          type: string
+                        amount:
+                          type: number
+                          format: float
+                        processedAt:
+                          type: string
+                          format: date-time
+  /revenue:
+    get:
+      operationId: getRevenueAnalytics
+      summary: Revenue analytics and reports
+      x-roles: [accountant]
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Revenue analytics data
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      description: A user in the system
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [supervisor, admin, superadmin, worker, accountant]
+        status:
+          type: string
+          enum: [enabled, disabled]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Supervisor:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          description: Supervisor specific details
+          properties:
+            assignedFloors:
+              type: array
+              items:
+                $ref: '#/components/schemas/Floor'
+            assignedVehicles:
+              type: array
+              items:
+                $ref: '#/components/schemas/VehicleClass'
+    Worker:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          description: Worker (cleaner) specific details
+          properties:
+            attendanceStatus:
+              type: string
+              enum: [checked-in, checked-out, absent]
+            currentJobId:
+              type: string
+              nullable: true
+            rating:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 5
+    Job:
+      type: object
+      description: Job details
+      properties:
+        id:
+          type: string
+        cleanerId:
+          type: string
+        supervisorId:
+          type: string
+        floorId:
+          type: string
+        vehicleClassId:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, completed]
+        scheduledAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+    Attendance:
+      type: object
+      description: Attendance record
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        date:
+          type: string
+          format: date
+        checkInTime:
+          type: string
+          format: date-time
+          nullable: true
+        checkOutTime:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [present, absent, late]
+    Building:
+      type: object
+      description: Building details
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        locationId:
+          type: string
+    Floor:
+      type: object
+      description: Floor details
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        buildingId:
+          type: string
+    VehicleClass:
+      type: object
+      description: Vehicle class and pricing
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+          format: float
+    Penalty:
+      type: object
+      description: Penalty details
+      properties:
+        id:
+          type: string
+        cleanerId:
+          type: string
+        assignedBy:
+          type: string
+        reason:
+          type: string
+        assignedAt:
+          type: string
+          format: date-time
+    Incentive:
+      type: object
+      description: Incentive details
+      properties:
+        id:
+          type: string
+        description:
+          type: string
+        amount:
+          type: number
+          format: float
+        effectiveFrom:
+          type: string
+          format: date
+        effectiveTo:
+          type: string
+          format: date
+          nullable: true
+    SalaryAccount:
+      type: object
+      description: Salary account details
+      properties:
+        id:
+          type: string
+        workerId:
+          type: string
+        bankAccountNumber:
+          type: string
+        bankName:
+          type: string
+        ifscCode:
+          type: string
+    Collection:
+      type: object
+      description: Cash and digital collection details
+      properties:
+        id:
+          type: string
+        amount:
+          type: number
+          format: float
+        paymentMethod:
+          type: string
+          enum: [cash, digital]
+        collectedAt:
+          type: string
+          format: date-time
+        collectedBy:
+          type: string
+    FraudAlert:
+      type: object
+      description: Fraud alert details
+      properties:
+        id:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [pending, verified, dismissed]
+        reportedAt:
+          type: string
+          format: date-time
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+    PerformanceSummary:
+      type: object
+      description: Performance summary details
+      properties:
+        date:
+          type: string
+          format: date
+        buildingId:
+          type: string
+        totalJobs:
+          type: integer
+        completedJobs:
+          type: integer
+        pendingJobs:
+          type: integer
+        averageRating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
